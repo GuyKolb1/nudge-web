@@ -3,7 +3,9 @@
 import * as C from "./crypto.js";
 
 const CLIENT_ID = "268823083504-eeb2eh2mndmllongm0hsc13hshc2l30n.apps.googleusercontent.com";
-const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const SCOPE = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/firebase.messaging";
+// Instant phone updates: an EMPTY "please sync" push via Firebase Cloud Messaging, sent as you.
+const FCM_SEND = "https://fcm.googleapis.com/v1/projects/eighth-saga-511511-n9/messages:send";
 const DEVICE = "web";
 const API = "https://www.googleapis.com";
 const DAY = 86400000;
@@ -115,10 +117,11 @@ async function sync() {
       if (f.modifiedTime && seenVersions.get(f.id) === f.modifiedTime) continue; // unchanged since last check
       const payload = JSON.parse(await C.decrypt(state.key, await download(f.id)));
       payload.notes.forEach(mergeOne);
+      if (payload.device === "phone" && payload.pushToken) state.phonePushToken = payload.pushToken;
       seenVersions.set(f.id, f.modifiedTime);
     }
     if (state.dirty || !state.ownFileId) await writeOwn();
-    setStatus(`Up to date · ${fmtTime(Date.now())}`);
+    setStatus(`Up to date · ${fmtTime(Date.now())}` + (state.pushOk ? " · phone notified" : ""));
   } catch (e) {
     setStatus("Sync problem: " + e.message, true);
   } finally {
@@ -135,6 +138,27 @@ async function writeOwn() {
   if (state.ownFileId) await updateFile(state.ownFileId, enc);
   else state.ownFileId = await createFile(`${DEVICE}.enc`, enc);
   state.dirty = false;
+  pingPhone();
+}
+
+/** Wake the phone so it syncs now instead of within 15 minutes. Best effort: polling remains the fallback. */
+async function pingPhone() {
+  if (!state.phonePushToken) return;
+  try {
+    const res = await fetch(FCM_SEND, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${await getToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: {
+        token: state.phonePushToken,
+        data: { type: "sync" },
+        android: { priority: "HIGH", ttl: "600s" },
+      } }),
+    });
+    state.pushOk = res.ok;
+    if (res.status === 404) state.phonePushToken = null; // phone re-registered; new address arrives with next phone sync
+  } catch {
+    state.pushOk = false;
+  }
 }
 
 let saveTimer = null;
