@@ -57,7 +57,8 @@ async function drive(path, opts = {}, retry = true) {
   return res;
 }
 const listFiles = async () =>
-  (await (await drive("/drive/v3/files?spaces=appDataFolder&pageSize=100&fields=files(id,name)")).json()).files || [];
+  (await (await drive("/drive/v3/files?spaces=appDataFolder&pageSize=100&fields=files(id,name,modifiedTime)")).json()).files || [];
+const seenVersions = new Map(); // file id -> modifiedTime already merged
 const download = async (id) => (await drive(`/drive/v3/files/${id}?alt=media`)).text();
 async function createFile(name, content) {
   const boundary = "nudge" + Date.now();
@@ -110,12 +111,14 @@ async function sync() {
   try {
     const files = await listFiles();
     for (const f of files.filter((f) => f.name.endsWith(".enc"))) {
+      if (f.name === `${DEVICE}.enc`) state.ownFileId = f.id;
+      if (f.modifiedTime && seenVersions.get(f.id) === f.modifiedTime) continue; // unchanged since last check
       const payload = JSON.parse(await C.decrypt(state.key, await download(f.id)));
       payload.notes.forEach(mergeOne);
-      if (f.name === `${DEVICE}.enc`) state.ownFileId = f.id;
+      seenVersions.set(f.id, f.modifiedTime);
     }
     if (state.dirty || !state.ownFileId) await writeOwn();
-    setStatus(`Synced ${fmtTime(Date.now())}`);
+    setStatus(`Up to date · ${fmtTime(Date.now())}`);
   } catch (e) {
     setStatus("Sync problem: " + e.message, true);
   } finally {
@@ -375,7 +378,14 @@ async function main() {
   $("lockBtn").onclick = () => location.reload(); // key lives in memory only
   $("status").onclick = () => { if (state.key) { state.token = null; sync(); } }; // click to reconnect/retry
 
-  setInterval(() => { if (state.key) sync(); }, 60000);
+  // Check for phone changes every 15s while the tab is visible, every 2 min in the background.
+  let lastCheck = 0;
+  setInterval(() => {
+    if (!state.key) return;
+    const every = document.hidden ? 120000 : 15000;
+    if (Date.now() - lastCheck >= every) { lastCheck = Date.now(); sync(); }
+  }, 5000);
+  window.addEventListener("focus", () => { if (state.key) { lastCheck = Date.now(); sync(); } });
   document.addEventListener("visibilitychange", () => { if (!document.hidden && state.key) sync(); });
   setInterval(() => { if (state.key) render(); }, 30000); // keep "overdue" and times fresh
 }
