@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nudge</title>
+<meta name="theme-color" content="#F3F1EA">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:">
+<link rel="stylesheet" href="style.css">
+<script src="https://accounts.google.com/gsi/client" async></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">nudge<span>.</span></div>
+  <div class="top-right">
+    <button id="status" class="status ghost" title="Click to sync now"></button>
+    <button id="lockBtn" class="ghost" hidden>Lock</button>
+  </div>
+</header>
+
+<!-- 1. Sign in -->
+<section id="viewSignin" class="card narrow" hidden>
+  <h1>Your notes, on your laptop</h1>
+  <p class="muted">Sign in with the same personal Google account you use for Nudge sync on your phone. Your notes are end-to-end encrypted. Google only stores scrambled data.</p>
+  <button id="signinBtn" class="primary">Sign in with Google</button>
+  <p id="signinError" class="error"></p>
+</section>
+
+<!-- 2. Passphrase -->
+<section id="viewUnlock" class="card narrow" hidden>
+  <h1 id="unlockTitle">Enter your passphrase</h1>
+  <p id="unlockHint" class="muted">The passphrase you created in Nudge on your phone.</p>
+  <form id="unlockForm">
+    <label for="pass">Passphrase</label>
+    <input id="pass" type="password" autocomplete="current-password" required minlength="8">
+    <div id="confirmWrap" hidden>
+      <label for="pass2">Repeat passphrase</label>
+      <input id="pass2" type="password" autocomplete="new-password" minlength="8">
+    </div>
+    <button class="primary" id="unlockBtn" type="submit">Unlock</button>
+  </form>
+  <p id="unlockError" class="error"></p>
+</section>
+
+<!-- 3. App -->
+<main id="viewApp" hidden>
+  <section class="card capture">
+    <label for="noteText" class="muted small">Type and go. Enter saves, Shift+Enter for a new line.</label>
+    <textarea id="noteText" rows="3" dir="auto" placeholder="What's on your mind?"></textarea>
+    <div class="when" id="whenLine" hidden></div>
+    <div class="chips" id="chips"></div>
+    <div class="pick" id="pickWrap" hidden>
+      <input type="datetime-local" id="pickInput">
+    </div>
+    <div class="row">
+      <span class="muted small">Reminders ring on your phone (it picks up laptop notes within about 15 minutes).</span>
+      <button id="saveBtn" class="primary">Save</button>
+    </div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="upcoming" aria-selected="true">Upcoming <span></span></button>
+    <button role="tab" data-tab="inbox" aria-selected="false">Inbox <span></span></button>
+    <button role="tab" data-tab="done" aria-selected="false">Done</button>
+  </nav>
+  <input id="search" class="search" type="search" placeholder="Search notes" dir="auto">
+  <ul id="list" class="list"></ul>
+  <p id="empty" class="muted center" hidden></p>
+</main>
+
+<template id="itemTpl">
+  <li class="item">
+    <button class="check" aria-label="Mark done"></button>
+    <div class="body">
+      <div class="text" dir="auto"></div>
+      <div class="meta"></div>
+    </div>
+    <div class="actions">
+      <button class="ghost act-remind">Remind</button>
+      <button class="ghost act-edit">Edit</button>
+      <button class="ghost act-delete" aria-label="Delete">Delete</button>
+    </div>
+  </li>
+</template>
+</body>
+</html>

@@ -1,0 +1,63 @@
+:root {
+  --ground: #F3F1EA; --surface: #FFFFFF; --ink: #17171B; --muted: #5C5A55;
+  --accent: #C2410C; --accent-ink: #FFFFFF; --teal: #0E6B5C; --chip: #E7E3D8; --line: #D6D2C6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 16px/1.45 "Segoe UI", system-ui, -apple-system, "Noto Sans Hebrew", sans-serif;
+}
+button { font: inherit; cursor: pointer; }
+.top { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; max-width: 880px; margin: 0 auto; }
+.brand { font-weight: 700; font-size: 24px; letter-spacing: -0.5px; }
+.brand span { color: var(--accent); }
+.top-right { display: flex; gap: 12px; align-items: center; }
+.status { font-size: 13px; color: var(--muted); }
+main, .card.narrow { max-width: 880px; margin: 0 auto; padding: 0 24px 48px; }
+.card { background: var(--surface); border-radius: 20px; padding: 20px; }
+.card.narrow { max-width: 460px; margin-top: 40px; padding: 28px; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.center { text-align: center; }
+.error { color: var(--accent); font-size: 14px; min-height: 1em; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+input[type=password], input[type=search], input[type=datetime-local] {
+  width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink);
+}
+.primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 10px 20px; font-weight: 600; min-height: 44px; }
+.primary:disabled { opacity: .5; cursor: default; }
+#unlockForm .primary, #signinBtn { margin-top: 16px; width: 100%; }
+.ghost { background: transparent; border: none; color: var(--muted); padding: 8px 10px; border-radius: 10px; min-height: 36px; }
+.ghost:hover { background: var(--chip); color: var(--ink); }
+.capture { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+textarea { width: 100%; border: none; outline: none; resize: vertical; font: inherit; font-size: 19px; color: var(--ink); background: transparent; }
+.when { color: var(--teal); font-weight: 600; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 20px; padding: 6px 14px; min-height: 36px; font-size: 14px; }
+.chip[aria-pressed=true] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.tabs button { flex: 1; border: none; border-radius: 12px; background: var(--chip); color: var(--ink); min-height: 44px; }
+.tabs button[aria-selected=true] { background: var(--ink); color: #fff; font-weight: 600; }
+.search { margin-bottom: 10px; }
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.item { background: var(--surface); border-radius: 16px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+.check { width: 24px; height: 24px; flex: none; border-radius: 8px; border: 2px solid var(--line); background: var(--surface); margin-top: 2px; }
+.check:hover { border-color: var(--teal); }
+.item.done .check { background: var(--teal); border-color: var(--teal); }
+.item.done .text { color: var(--muted); text-decoration: line-through; }
+.body { flex: 1; min-width: 0; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.text[contenteditable=true] { outline: 2px solid var(--accent); border-radius: 6px; padding: 2px 4px; }
+.meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.meta.overdue { color: var(--accent); }
+.actions { display: flex; gap: 2px; opacity: .55; }
+.item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.popover { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+@media (max-width: 600px) {
+  .top, main { padding-left: 16px; padding-right: 16px; }
+  .item { flex-wrap: wrap; }
+  .actions { opacity: 1; width: 100%; justify-content: flex-end; }
+  .row { flex-direction: column; align-items: stretch; }
+}
