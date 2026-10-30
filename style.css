@@ -54,6 +54,17 @@ textarea { width: 100%; border: none; outline: none; resize: vertical; font: inh
 .meta.overdue { color: var(--accent); }
 .actions { display: flex; gap: 2px; opacity: .55; }
 .item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.atts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.atts:empty { display: none; }
+.att { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border: none; border-radius: 10px; padding: 4px 8px; font-size: 13px; color: var(--ink); max-width: 240px; }
+.att span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; display: block; }
+.att.photo { padding: 2px; }
+.att .x { border: none; background: transparent; color: var(--muted); padding: 0 2px; font-size: 14px; }
+.att.busy { opacity: .6; }
+.dropping { outline: 3px dashed var(--accent); outline-offset: 4px; }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: flex; align-items: center; justify-content: center; z-index: 10; cursor: zoom-out; }
+.lightbox img { max-width: 96vw; max-height: 96vh; }
 .popover { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 @media (max-width: 600px) {
   .top, main { padding-left: 16px; padding-right: 16px; }

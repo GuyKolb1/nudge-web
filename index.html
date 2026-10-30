@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#F3F1EA">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://fcm.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://fcm.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob:">
 <link rel="stylesheet" href="style.css">
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script type="module" src="app.js"></script>
@@ -50,12 +50,15 @@
   <section class="card capture">
     <label for="noteText" class="muted small">Type and go. Enter saves, Shift+Enter for a new line.</label>
     <textarea id="noteText" rows="3" dir="auto" placeholder="What's on your mind?"></textarea>
+    <div class="atts" id="pendingAtts"></div>
     <div class="when" id="whenLine" hidden></div>
     <div class="chips" id="chips"></div>
     <div class="pick" id="pickWrap" hidden>
       <input type="datetime-local" id="pickInput">
     </div>
+    <input type="file" id="fileInput" multiple hidden>
     <div class="row">
+      <button id="attachBtn" class="ghost" title="Attach photos or files (or drop them here, or paste an image)">📎 Attach</button>
       <span class="muted small">Reminders ring on your phone (it picks up laptop notes within about 15 minutes).</span>
       <button id="saveBtn" class="primary">Save</button>
     </div>
@@ -78,9 +81,11 @@
     <button class="check" aria-label="Mark done"></button>
     <div class="body">
       <div class="text" dir="auto"></div>
+      <div class="atts"></div>
       <div class="meta"></div>
     </div>
     <div class="actions">
+      <button class="ghost act-attach" title="Attach files (or drop them on the note)">📎</button>
       <button class="ghost act-remind">Remind</button>
       <button class="ghost act-edit">Edit</button>
       <button class="ghost act-delete" aria-label="Delete">Delete</button>

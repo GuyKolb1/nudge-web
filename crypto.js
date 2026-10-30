@@ -44,3 +44,22 @@ export async function decrypt(key, envelope) {
   const plain = await subtle.decrypt({ name: "AES-GCM", iv: unb64(iv) }, key, unb64(ct));
   return dec.decode(plain);
 }
+
+/** Binary form for attachments (same as the phone): 12-byte IV followed by ciphertext+tag. */
+export async function encryptBytes(key, bytes) {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await subtle.encrypt({ name: "AES-GCM", iv }, key, bytes));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv); out.set(ct, 12);
+  return out;
+}
+
+export async function decryptBytes(key, data) {
+  const d = new Uint8Array(data);
+  return new Uint8Array(await subtle.decrypt({ name: "AES-GCM", iv: d.slice(0, 12) }, key, d.slice(12)));
+}
+
+export async function sha256Hex(bytes) {
+  const h = new Uint8Array(await subtle.digest("SHA-256", bytes));
+  return [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

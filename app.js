@@ -20,6 +20,8 @@ const state = {
   tab: "upcoming",
   pendingAt: null, pendingLabel: null,
   vault: null,             // { id, json } or null if none yet
+  pendingAtts: [],         // attachments added in the capture box before Save: { meta, busy }
+  blobIds: new Map(),      // attUid -> Drive file id
 };
 
 // ---------- Google auth ----------
@@ -58,8 +60,20 @@ async function drive(path, opts = {}, retry = true) {
   if (!res.ok) throw new Error(`Google Drive error ${res.status}`);
   return res;
 }
-const listFiles = async () =>
-  (await (await drive("/drive/v3/files?spaces=appDataFolder&pageSize=100&fields=files(id,name,modifiedTime)")).json()).files || [];
+/** Every file in the hidden app folder (follows pages: attachments make the list long). */
+async function listFiles() {
+  const out = [];
+  let page = "";
+  do {
+    const q = "/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=nextPageToken,files(id,name,modifiedTime)" +
+      (page ? "&pageToken=" + encodeURIComponent(page) : "");
+    const json = await (await drive(q)).json();
+    out.push(...(json.files || []));
+    page = json.nextPageToken || "";
+  } while (page);
+  state.blobIds = new Map(out.filter((f) => f.name.startsWith("att-")).map((f) => [f.name.slice(4, -4), f.id]));
+  return out;
+}
 const seenVersions = new Map(); // file id -> modifiedTime already merged
 const download = async (id) => (await drive(`/drive/v3/files/${id}?alt=media`)).text();
 async function createFile(name, content) {
@@ -71,6 +85,23 @@ async function createFile(name, content) {
     method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body,
   });
   return (await res.json()).id;
+}
+async function createBinary(name, bytes) {
+  const boundary = "nudge" + Date.now();
+  const meta = JSON.stringify({ name, parents: ["appDataFolder"] });
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`,
+    bytes,
+    `\r\n--${boundary}--\r\n`,
+  ]);
+  const res = await drive("/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body,
+  });
+  return (await res.json()).id;
+}
+const downloadBytes = async (id) => new Uint8Array(await (await drive(`/drive/v3/files/${id}?alt=media`)).arrayBuffer());
+async function deleteFile(id) {
+  try { await drive(`/drive/v3/files/${id}`, { method: "DELETE" }); } catch { /* already gone */ }
 }
 const updateFile = (id, content) => drive(`/upload/drive/v3/files/${id}?uploadType=media`, {
   method: "PATCH", headers: { "Content-Type": "application/json; charset=UTF-8" }, body: content,
@@ -103,7 +134,19 @@ async function unlock(passphrase) {
 // ---------- Sync ----------
 function mergeOne(n) {
   const cur = state.notes.get(n.uid);
-  if (!cur || n.updatedAt > cur.updatedAt) state.notes.set(n.uid, n);
+  if (!cur) state.notes.set(n.uid, n);
+  else if (n.updatedAt > cur.updatedAt) state.notes.set(n.uid, { ...n, attachments: unionAtts(cur.attachments, n.attachments) });
+  else cur.attachments = unionAtts(cur.attachments, n.attachments); // never lose a file added on the other device
+}
+
+/** Merge attachment lists by attUid; a deletion on either side wins. */
+function unionAtts(a = [], b = []) {
+  const map = new Map();
+  for (const x of [...(a || []), ...(b || [])]) {
+    const prev = map.get(x.attUid);
+    map.set(x.attUid, prev ? { ...prev, deleted: prev.deleted || x.deleted } : x);
+  }
+  return [...map.values()];
 }
 
 let syncing = false;
@@ -243,7 +286,7 @@ function renderCapture() {
   }, state.pendingLabel));
   $("whenLine").hidden = !state.pendingAt;
   if (state.pendingAt) $("whenLine").textContent = `Reminds you ${describe(state.pendingAt)}`;
-  $("saveBtn").disabled = !$("noteText").value.trim();
+  $("saveBtn").disabled = !$("noteText").value.trim() && !state.pendingAtts.length;
 }
 
 function visibleNotes() {
@@ -276,7 +319,7 @@ function renderItem(n) {
   const li = $("itemTpl").content.firstElementChild.cloneNode(true);
   if (n.done) li.classList.add("done");
   const text = li.querySelector(".text");
-  text.textContent = n.text;
+  text.textContent = n.text || activeAtts(n).map((a) => a.name).join(", ");
   const meta = li.querySelector(".meta");
   if (n.done) meta.textContent = n.doneAt ? `Done ${describe(n.doneAt)}` : "Done";
   else if (n.remindAt != null) {
@@ -285,12 +328,22 @@ function renderItem(n) {
     if (overdue) meta.classList.add("overdue");
   } else meta.textContent = `Added ${describe(n.createdAt)}`;
 
+  renderAtts(li.querySelector(".atts"), activeAtts(n), (att) => removeAttachment(n.uid, att));
+  const fileIn = document.createElement("input");
+  fileIn.type = "file"; fileIn.multiple = true; fileIn.hidden = true;
+  fileIn.onchange = () => { attachTo(n.uid, [...fileIn.files]); fileIn.value = ""; };
+  li.append(fileIn);
+  li.querySelector(".act-attach").onclick = () => fileIn.click();
+  makeDropZone(li, (files) => attachTo(n.uid, files));
+
   const check = li.querySelector(".check");
   check.setAttribute("aria-label", n.done ? "Restore" : "Mark done");
   check.onclick = () => upsert(n.uid, n.done ? { done: false, doneAt: null } : { done: true, doneAt: Date.now() });
 
   li.querySelector(".act-delete").onclick = () => {
-    if (confirm("Delete this note everywhere?")) upsert(n.uid, { deleted: true, text: "" });
+    if (!confirm("Delete this note everywhere?")) return;
+    for (const a of activeAtts(n)) { const id = state.blobIds?.get(a.attUid); if (id) deleteFile(id); }
+    upsert(n.uid, { deleted: true, text: "", attachments: (n.attachments || []).map((a) => ({ ...a, deleted: true })) });
   };
 
   li.querySelector(".act-edit").onclick = (e) => {
@@ -331,16 +384,187 @@ function renderItem(n) {
 
 function saveNote() {
   const text = $("noteText").value.trim();
-  if (!text) return;
+  if (state.pendingAtts.some((p) => p.busy)) { setStatus("Still uploading attachments…"); return; }
+  const atts = state.pendingAtts.map((p) => p.meta);
+  if (!text && !atts.length) return;
   const now = Date.now();
   const uid = crypto.randomUUID();
-  state.notes.set(uid, { uid, text, createdAt: now, remindAt: state.pendingAt, done: false, doneAt: null, updatedAt: now, deleted: false });
+  state.notes.set(uid, { uid, text, createdAt: now, remindAt: state.pendingAt, done: false, doneAt: null, updatedAt: now, deleted: false, attachments: atts });
+  state.pendingAtts = [];
+  renderPending();
   $("noteText").value = "";
   state.pendingAt = null; state.pendingLabel = null; $("pickWrap").hidden = true;
   state.tab = state.notes.get(uid).remindAt != null ? "upcoming" : "inbox";
   renderCapture();
   changed();
   $("noteText").focus();
+}
+
+// ---------- Attachments ----------
+// Each file is its own Drive file att-<attUid>.bin: 12-byte IV + AES-GCM ciphertext (same vault key as notes).
+// Google sees only a random id and ciphertext. Name, type and size live inside the encrypted note.
+const MAX_FILE = 10 * 1024 * 1024;
+const PHOTO_MAX_PX = 2048;
+const activeAtts = (n) => (n.attachments || []).filter((a) => !a.deleted);
+const urlCache = new Map(); // attUid -> object URL (decrypted, memory only)
+
+/** Photos: resized to 2048 px JPEG (drops location data). Other files: up to 10 MB as they are. */
+async function prepareFile(file) {
+  const isPhoto = file.type.startsWith("image/") && !["image/gif", "image/svg+xml"].includes(file.type);
+  if (isPhoto) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const scale = Math.min(1, PHOTO_MAX_PX / Math.max(bmp.width, bmp.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bmp.width * scale));
+      canvas.height = Math.max(1, Math.round(bmp.height * scale));
+      canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+      const base = (file.name || "photo").replace(/\.[^.]+$/, "") || "photo";
+      return { name: base + ".jpg", mime: "image/jpeg", bytes: new Uint8Array(await blob.arrayBuffer()) };
+    } catch { /* not decodable: treat as a normal file */ }
+  }
+  if (file.size > MAX_FILE) throw new Error(`${file.name}: file too large (max 10 MB)`);
+  return { name: file.name || "file", mime: file.type || "application/octet-stream", bytes: new Uint8Array(await file.arrayBuffer()) };
+}
+
+/** Encrypts + uploads the blob first, then returns the metadata (so the phone never sees a missing file). */
+async function uploadFile(file) {
+  const f = await prepareFile(file);
+  const attUid = crypto.randomUUID();
+  const id = await createBinary(`att-${attUid}.bin`, await C.encryptBytes(state.key, f.bytes));
+  state.blobIds.set(attUid, id);
+  urlCache.set(attUid, URL.createObjectURL(new Blob([f.bytes], { type: f.mime })));
+  return { attUid, name: f.name, mime: f.mime, size: f.bytes.length, sha256: await C.sha256Hex(f.bytes), addedAt: Date.now(), deleted: false };
+}
+
+async function attachTo(uid, files) {
+  for (const file of files) {
+    try {
+      setStatus(`Uploading ${file.name}…`);
+      const meta = await uploadFile(file);
+      const n = state.notes.get(uid);
+      upsert(uid, { attachments: [...(n.attachments || []), meta] });
+      setStatus("Attached " + meta.name);
+    } catch (e) { setStatus(e.message, true); }
+  }
+}
+
+function addPending(files) {
+  for (const file of files) {
+    const p = { meta: { attUid: "", name: file.name, mime: file.type }, busy: true };
+    state.pendingAtts.push(p);
+    renderPending();
+    uploadFile(file).then((meta) => { p.meta = meta; p.busy = false; })
+      .catch((e) => { state.pendingAtts = state.pendingAtts.filter((x) => x !== p); setStatus(e.message, true); })
+      .finally(() => { renderPending(); renderCapture(); });
+  }
+  renderCapture();
+}
+
+function renderPending() {
+  renderAtts($("pendingAtts"), state.pendingAtts.map((p) => ({ ...p.meta, busy: p.busy })), (att) => {
+    const id = state.blobIds.get(att.attUid);
+    if (id) deleteFile(id);
+    state.pendingAtts = state.pendingAtts.filter((p) => p.meta.attUid !== att.attUid);
+    renderPending(); renderCapture();
+  });
+}
+
+function removeAttachment(uid, att) {
+  const n = state.notes.get(uid);
+  const id = state.blobIds.get(att.attUid);
+  if (id) deleteFile(id);
+  upsert(uid, { attachments: (n.attachments || []).map((a) => (a.attUid === att.attUid ? { ...a, deleted: true } : a)) });
+}
+
+/** Decrypted copy of one attachment, kept in memory for this session. Null if not uploaded yet. */
+async function attachmentUrl(att) {
+  if (urlCache.has(att.attUid)) return urlCache.get(att.attUid);
+  let id = state.blobIds.get(att.attUid);
+  if (!id) { await listFiles(); id = state.blobIds.get(att.attUid); }
+  if (!id) return null;
+  const bytes = await C.decryptBytes(state.key, await downloadBytes(id));
+  const url = URL.createObjectURL(new Blob([bytes], { type: att.mime }));
+  urlCache.set(att.attUid, url);
+  return url;
+}
+
+async function openAttachment(att) {
+  try {
+    if (!urlCache.has(att.attUid)) setStatus(`Opening ${att.name}…`);
+    const url = await attachmentUrl(att);
+    if (!url) { setStatus(`${att.name} hasn't finished uploading from the phone yet.`, true); return; }
+    setStatus("");
+    if (att.mime.startsWith("image/")) {
+      const box = document.createElement("div");
+      box.className = "lightbox";
+      const img = document.createElement("img");
+      img.src = url; img.alt = att.name;
+      box.append(img);
+      box.onclick = () => box.remove();
+      document.addEventListener("keydown", function esc(e) { if (e.key === "Escape") { box.remove(); document.removeEventListener("keydown", esc); } });
+      document.body.append(box);
+    } else {
+      const a = document.createElement("a");
+      a.href = url; a.download = att.name;
+      document.body.append(a); a.click(); a.remove();
+    }
+  } catch (e) { setStatus("Couldn't open " + att.name + ": " + e.message, true); }
+}
+
+/** Chips for a list of attachments. Photos get a thumbnail once opened or uploaded here. */
+function renderAtts(container, atts, onRemove) {
+  container.replaceChildren(...atts.map((att) => {
+    const chip = document.createElement("span");
+    chip.setAttribute("role", "button"); chip.tabIndex = 0;
+    chip.className = "att" + (att.busy ? " busy" : "");
+    chip.title = att.busy ? "Uploading…" : `${att.name} · ${fmtSize(att.size)}`;
+    const cached = urlCache.get(att.attUid);
+    if (att.mime?.startsWith("image/") && cached) {
+      chip.classList.add("photo");
+      const img = document.createElement("img"); img.src = cached; img.alt = att.name;
+      chip.append(img);
+    } else {
+      if (att.mime?.startsWith("image/") && !att.busy) loadThumb(att);
+      const label = document.createElement("span");
+      label.textContent = (att.mime?.startsWith("image/") ? "🖼 " : "📎 ") + (att.busy ? "Uploading " : "") + att.name;
+      chip.append(label);
+    }
+    chip.onclick = () => !att.busy && openAttachment(att).then(() => render());
+    if (!att.busy) {
+      const x = document.createElement("button");
+      x.className = "x"; x.textContent = "✕"; x.title = "Remove";
+      x.onclick = (e) => { e.stopPropagation(); if (confirm(`Remove ${att.name}?`)) onRemove(att); };
+      chip.append(x);
+    }
+    return chip;
+  }));
+}
+
+const thumbLoading = new Set();
+/** Fetch + decrypt a photo in the background, then redraw so its thumbnail shows. */
+function loadThumb(att) {
+  if (thumbLoading.has(att.attUid) || att.size > 4 * 1048576) return;
+  thumbLoading.add(att.attUid);
+  attachmentUrl(att).then((url) => { if (url) render(); }).catch(() => {}).finally(() => {
+    // Not uploaded yet: allow another try on a later redraw (after the next sync).
+    setTimeout(() => thumbLoading.delete(att.attUid), 30000);
+  });
+}
+
+const fmtSize = (b) => (b == null ? "" : b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+
+function makeDropZone(el, onFiles) {
+  let depth = 0;
+  el.addEventListener("dragenter", (e) => { if (e.dataTransfer?.types?.includes("Files")) { depth++; el.classList.add("dropping"); e.preventDefault(); } });
+  el.addEventListener("dragover", (e) => { if (e.dataTransfer?.types?.includes("Files")) e.preventDefault(); });
+  el.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; el.classList.remove("dropping"); } });
+  el.addEventListener("drop", (e) => {
+    depth = 0; el.classList.remove("dropping");
+    const files = [...(e.dataTransfer?.files || [])];
+    if (files.length) { e.preventDefault(); e.stopPropagation(); onFiles(files); }
+  });
 }
 
 // ---------- Wiring ----------
@@ -394,6 +618,16 @@ async function main() {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); saveNote(); }
   });
   $("saveBtn").onclick = saveNote;
+  $("attachBtn").onclick = () => $("fileInput").click();
+  $("fileInput").onchange = () => { addPending([...$("fileInput").files]); $("fileInput").value = ""; };
+  makeDropZone(document.querySelector(".capture"), addPending);
+  // A file dropped outside a note or the capture box must not make the browser open it.
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+  $("noteText").addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); addPending(files); }
+  });
   $("pickInput").onchange = () => {
     if ($("pickInput").value) { state.pendingAt = new Date($("pickInput").value).getTime(); renderCapture(); }
   };
