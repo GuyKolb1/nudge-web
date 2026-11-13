@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#F3F1EA">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://fcm.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob:">
 <link rel="stylesheet" href="style.css">
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script type="module" src="app.js"></script>
@@ -17,6 +17,7 @@
   <div class="brand">nudge<span>.</span></div>
   <div class="top-right">
     <button id="status" class="status ghost" title="Click to sync now"></button>
+    <button id="syncBtn" class="ghost" title="Sync with your phone now" hidden>Sync</button>
     <button id="lockBtn" class="ghost" hidden>Lock</button>
   </div>
 </header>
@@ -59,7 +60,7 @@
     <input type="file" id="fileInput" multiple hidden>
     <div class="row">
       <button id="attachBtn" class="ghost" title="Attach photos or files (or drop them here, or paste an image)">📎 Attach</button>
-      <span class="muted small">Reminders ring on your phone (it picks up laptop notes within about 15 minutes).</span>
+      <span class="muted small">Reminders ring on your phone. It picks up laptop notes within about 15 minutes, or right away when you tap Sync on the phone.</span>
       <button id="saveBtn" class="primary">Save</button>
     </div>
   </section>
