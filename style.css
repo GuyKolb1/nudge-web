@@ -95,3 +95,5 @@ button.tag { cursor: pointer; min-height: 32px; }
 .taglist .ghost { min-height: 32px; padding: 4px 8px; }
 .taglist .ghost:disabled { opacity: .3; cursor: default; }
 .act-star.on { color: #E0A100; }
+.act-rocket, .act-rocket:hover { color: var(--accent); }
+.act-rocket svg { display: block; }

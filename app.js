@@ -424,6 +424,36 @@ function render() {
     : { inbox: "Inbox zero.", done: "No completed notes yet." }[state.tab];
 }
 
+// The GetSheetDone rocket: opens Claude in a new tab with the task and the agent's mission (same text as the phone).
+// Nothing reaches Claude from this page except through that tab, and only because the user clicked the rocket.
+// The agent only prepares: it never sends, invites or shares.
+function agentPrompt(note) {
+  return `This is a task from my task app, GetSheetDone:\n\n"${note}"\n\n` +
+    "Your mission: help me complete it. First work out what the task needs, using what you know about me " +
+    "and my work, my earlier chats, my calendar, my email and my files.\n" +
+    "- If it needs focus time: find a good slot and propose a calendar block.\n" +
+    "- If it needs an email: write the draft so it is ready to send, and propose a 15 minute calendar slot " +
+    "for me to review it before sending.\n" +
+    "- If it needs a meeting: propose who, when and the agenda, written so I can create the invite myself.\n" +
+    "- If it fits an existing meeting in the next 2 weeks: say which one and give me the line to add to the agenda.\n" +
+    "- If it needs information: find it and show me where it came from.\n" +
+    "- Anything else: give me the shortest plan to finish it and do the parts you can. If there is nothing " +
+    "useful you can prepare, say so in one line.\n" +
+    "Explain in a line what led you to each proposal. You prepare, I act: never send an email, invite anyone, " +
+    "create or share a file, or pass my information to anyone else. Drafts in my own mailbox are fine. " +
+    "A block on my own calendar with no other people needs my yes first.";
+}
+
+function launchAgent(note) {
+  const prompt = agentPrompt(note);
+  // Also on the clipboard, so a long task (or a chat that opens empty) is one paste away.
+  navigator.clipboard?.writeText(prompt).catch(() => {});
+  const url = "https://claude.ai/new?q=" + encodeURIComponent(prompt);
+  const fits = url.length <= 6000;
+  window.open(fits ? url : "https://claude.ai/new", "_blank", "noopener");
+  setStatus(fits ? "Opened in Claude. If the chat is empty, paste." : "Task copied. Paste it into Claude.");
+}
+
 function renderItem(n) {
   const li = $("itemTpl").content.firstElementChild.cloneNode(true);
   if (n.done) li.classList.add("done");
@@ -443,6 +473,9 @@ function renderItem(n) {
   star.classList.toggle("on", !!n.isStarred);
   star.setAttribute("aria-label", n.isStarred ? "Unstar" : "Star");
   star.onclick = () => upsert(n.uid, { isStarred: !n.isStarred });
+  const rocket = li.querySelector(".act-rocket");
+  if (n.done || !(n.text || "").trim()) rocket.remove();
+  else rocket.onclick = () => launchAgent(n.text);
 
   // Tag picker for this note: toggle existing tags or type a new one. Stays open while you pick.
   li.querySelector(".act-tags").onclick = () => { state.tagPopFor = state.tagPopFor === n.uid ? null : n.uid; render(); };
