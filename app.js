@@ -137,8 +137,17 @@ async function unlock(passphrase) {
 function mergeOne(n) {
   const cur = state.notes.get(n.uid);
   if (!cur) state.notes.set(n.uid, n);
-  else if (n.updatedAt > cur.updatedAt) state.notes.set(n.uid, { ...n, attachments: unionAtts(cur.attachments, n.attachments) });
-  else cur.attachments = unionAtts(cur.attachments, n.attachments); // never lose a file added on the other device
+  else {
+    // Rocket presses are never lost: the higher count wins, whichever side is newer.
+    const rocketCount = Math.max(cur.rocketCount || 0, n.rocketCount || 0);
+    if (n.updatedAt > cur.updatedAt) {
+      // An older app sends no "prepared": keep ours.
+      state.notes.set(n.uid, { ...n, attachments: unionAtts(cur.attachments, n.attachments), rocketCount, prepared: n.prepared ?? cur.prepared ?? false });
+    } else {
+      cur.attachments = unionAtts(cur.attachments, n.attachments); // never lose a file added on the other device
+      cur.rocketCount = rocketCount;
+    }
+  }
 }
 
 /** Merge attachment lists by attUid; a deletion on either side wins. */
@@ -475,7 +484,13 @@ function renderItem(n) {
   star.onclick = () => upsert(n.uid, { isStarred: !n.isStarred });
   const rocket = li.querySelector(".act-rocket");
   if (n.done || !(n.text || "").trim()) rocket.remove();
-  else rocket.onclick = () => launchAgent(n.text);
+  else {
+    // The number next to the rocket: how many times it was pressed for this task.
+    rocket.querySelector(".rocket-n").textContent = n.rocketCount > 0 ? String(n.rocketCount) : "";
+    rocket.onclick = () => { launchAgent(n.text); upsert(n.uid, { rocketCount: (n.rocketCount || 0) + 1 }); };
+  }
+  // Green = Claude prepared this task, only your own step is left.
+  if (n.prepared && !n.done) { li.classList.add("prepared"); meta.textContent = "Ready for you · " + meta.textContent; }
 
   // Tag picker for this note: toggle existing tags or type a new one. Stays open while you pick.
   li.querySelector(".act-tags").onclick = () => { state.tagPopFor = state.tagPopFor === n.uid ? null : n.uid; render(); };

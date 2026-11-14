@@ -96,4 +96,7 @@ button.tag { cursor: pointer; min-height: 32px; }
 .taglist .ghost:disabled { opacity: .3; cursor: default; }
 .act-star.on { color: #E0A100; }
 .act-rocket, .act-rocket:hover { color: var(--accent); }
-.act-rocket svg { display: block; }
+.act-rocket { display: inline-flex; align-items: center; gap: 3px; }
+.rocket-n { font-size: 12px; font-weight: 600; }
+.rocket-n:empty { display: none; }
+.item.prepared { background: #E2F3E4; }
