@@ -16,7 +16,10 @@ const state = {
   notes: new Map(),        // uid -> note
   ownFileId: null,
   dirty: false,
-  tab: "upcoming",
+  tab: "inbox",
+  tags: new Map(),         // uid -> { uid, name, color, order, updatedAt, deleted }
+  filter: new Set(),       // tag uids picked in the filter row (any of them)
+  tagPopFor: null,         // uid of the note whose tag picker is open
   pendingAt: null, pendingLabel: null,
   vault: null,             // { id, json } or null if none yet
   pendingAtts: [],         // attachments added in the capture box before Save: { meta, busy }
@@ -159,6 +162,7 @@ async function sync() {
       if (f.modifiedTime && seenVersions.get(f.id) === f.modifiedTime) continue; // unchanged since last check
       const payload = JSON.parse(await C.decrypt(state.key, await download(f.id)));
       payload.notes.forEach(mergeOne);
+      (payload.tags || []).forEach(mergeTag);
       seenVersions.set(f.id, f.modifiedTime);
     }
     if (state.dirty || !state.ownFileId) await writeOwn();
@@ -175,7 +179,8 @@ async function sync() {
 async function writeOwn() {
   const cutoff = Date.now() - 30 * DAY;
   for (const [uid, n] of state.notes) if (n.deleted && n.updatedAt < cutoff) state.notes.delete(uid);
-  const payload = JSON.stringify({ v: 1, device: DEVICE, writtenAt: Date.now(), notes: [...state.notes.values()] });
+  for (const [uid, t] of state.tags) if (t.deleted && t.updatedAt < cutoff) state.tags.delete(uid);
+  const payload = JSON.stringify({ v: 1, device: DEVICE, writtenAt: Date.now(), notes: [...state.notes.values()], tags: [...state.tags.values()] });
   const enc = await C.encrypt(state.key, payload);
   if (state.ownFileId) await updateFile(state.ownFileId, enc);
   else state.ownFileId = await createFile(`${DEVICE}.enc`, enc);
@@ -203,6 +208,118 @@ function upsert(uid, patch) {
   const n = state.notes.get(uid);
   state.notes.set(uid, { ...n, ...patch, updatedAt: Date.now() });
   changed();
+}
+
+// ---------- Tags (same model as the phone: last-writer-wins per tag, deletes are tombstones) ----------
+const PALETTE = ["#0E6B5C", "#C2410C", "#1D4ED8", "#7C3AED", "#B45309", "#BE185D", "#15803D", "#475569"];
+const HASHTAG = /(?:^|(?<=\s))#(\p{L}[\p{L}\p{N}_-]*)/gmu;
+
+function mergeTag(t) {
+  if (!t || !t.uid) return;
+  const cur = state.tags.get(t.uid);
+  if (cur && (t.updatedAt || 0) <= cur.updatedAt) return;
+  state.tags.set(t.uid, {
+    uid: t.uid, name: t.name || "", color: t.color || PALETTE[7], updatedAt: t.updatedAt || 0, deleted: !!t.deleted,
+    order: t.order ?? cur?.order ?? 0, // an older phone build sends no order: keep ours
+  });
+}
+/** Tags in the order the user chose (then by name). */
+const activeTags = () => [...state.tags.values()].filter((t) => !t.deleted)
+  .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+const noteTagIds = (n) => (Array.isArray(n.tags) ? n.tags : []);
+const noteTags = (n) => { const ids = noteTagIds(n); return activeTags().filter((t) => ids.includes(t.uid)); };
+
+function putTag(uid, patch) {
+  state.tags.set(uid, { ...state.tags.get(uid), ...patch, updatedAt: Date.now() });
+  changed();
+}
+/** Finds a tag by name (any case) or creates it at the end of the order. Returns its uid. */
+function findOrCreateTag(name) {
+  const clean = name.trim().replace(/^#/, "").trim();
+  if (!clean) return null;
+  const all = activeTags();
+  const existing = all.find((t) => t.name.toLowerCase() === clean.toLowerCase());
+  if (existing) return existing.uid;
+  const uid = crypto.randomUUID();
+  state.tags.set(uid, {
+    uid, name: clean, color: PALETTE[all.length % PALETTE.length], updatedAt: Date.now(), deleted: false,
+    order: all.reduce((m, t) => Math.max(m, t.order), -1) + 1,
+  });
+  state.dirty = true;
+  return uid;
+}
+function moveTag(uid, delta) {
+  const list = activeTags();
+  const i = list.findIndex((t) => t.uid === uid), j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  list.splice(j, 0, list.splice(i, 1)[0]);
+  const now = Date.now();
+  list.forEach((t, idx) => { if (t.order !== idx) state.tags.set(t.uid, { ...t, order: idx, updatedAt: now }); });
+  changed();
+}
+function toggleNoteTag(uid, tagUid) {
+  const ids = noteTagIds(state.notes.get(uid));
+  upsert(uid, { tags: ids.includes(tagUid) ? ids.filter((x) => x !== tagUid) : [...ids, tagUid] });
+}
+function tagPill(t, { selected = null, small = false, onClick = null } = {}) {
+  const el = document.createElement(onClick ? "button" : "span");
+  el.className = "tag" + (small ? " small" : "");
+  el.style.setProperty("--c", t.color);
+  el.textContent = t.name; el.dir = "auto";
+  if (selected !== null) el.setAttribute("aria-pressed", String(selected));
+  if (onClick) { el.type = "button"; el.onclick = onClick; }
+  return el;
+}
+
+/** Filter row above the list. Click to filter, click again to clear. More than one = any of them. */
+function renderFilter() {
+  const tags = activeTags();
+  for (const uid of state.filter) if (!tags.some((t) => t.uid === uid)) state.filter.delete(uid); // deleted tag drops out
+  const row = $("tagFilter");
+  const kids = tags.map((t) => tagPill(t, { selected: state.filter.has(t.uid), onClick: () => {
+    state.filter.has(t.uid) ? state.filter.delete(t.uid) : state.filter.add(t.uid); render();
+  } }));
+  if (state.filter.size) {
+    const clear = document.createElement("button");
+    clear.className = "chip"; clear.textContent = "Clear";
+    clear.onclick = () => { state.filter.clear(); render(); };
+    kids.unshift(clear);
+  }
+  const manage = document.createElement("button");
+  manage.className = "ghost"; manage.textContent = tags.length ? "Edit tags" : "Add tags";
+  manage.onclick = () => { renderTagDialog(); $("tagDialog").showModal(); };
+  row.replaceChildren(...kids, manage);
+}
+
+/** Manage tags: order (arrows), rename, color, delete, add. */
+function renderTagDialog() {
+  const tags = activeTags();
+  $("tagList").replaceChildren(...tags.map((t, i) => {
+    const li = document.createElement("li");
+    const dot = document.createElement("button");
+    dot.className = "dot"; dot.style.background = t.color; dot.title = "Change color";
+    dot.onclick = () => putTag(t.uid, { color: PALETTE[(PALETTE.indexOf(t.color.toUpperCase()) + 1) % PALETTE.length] });
+    const name = document.createElement("input");
+    name.value = t.name; name.dir = "auto"; name.setAttribute("aria-label", "Tag name");
+    name.onchange = () => {
+      const v = name.value.trim().replace(/^#/, "").trim();
+      const taken = tags.some((x) => x.uid !== t.uid && x.name.toLowerCase() === v.toLowerCase());
+      if (!v || taken) { name.value = t.name; if (taken) setStatus("A tag with that name already exists", true); return; }
+      if (v !== t.name) putTag(t.uid, { name: v });
+    };
+    const btn = (label, title, onClick, disabled = false) => {
+      const b = document.createElement("button");
+      b.className = "ghost"; b.textContent = label; b.title = title; b.disabled = disabled; b.onclick = onClick;
+      return b;
+    };
+    li.append(dot, name,
+      btn("↑", "Move up", () => moveTag(t.uid, -1), i === 0),
+      btn("↓", "Move down", () => moveTag(t.uid, 1), i === tags.length - 1),
+      btn("✕", "Delete tag", () => {
+        if (confirm(`Delete "${t.name}"? It is removed from every task. The tasks themselves stay.`)) putTag(t.uid, { deleted: true });
+      }));
+    return li;
+  }));
 }
 
 // ---------- Time helpers (same rules as the phone) ----------
@@ -281,14 +398,17 @@ function visibleNotes() {
   const q = $("search").value.trim().toLowerCase();
   let all = [...state.notes.values()].filter((n) => !n.deleted);
   if (q) all = all.filter((n) => n.text.toLowerCase().includes(q));
-  const upcoming = all.filter((n) => !n.done && n.remindAt != null).sort((a, b) => a.remindAt - b.remindAt);
-  const inbox = all.filter((n) => !n.done && n.remindAt == null).sort((a, b) => b.createdAt - a.createdAt);
+  if (state.filter.size) all = all.filter((n) => noteTagIds(n).some((id) => state.filter.has(id)));
+  // Inbox = every open note, scheduled or not (same as the phone). Starred first, then newest first.
+  const inbox = all.filter((n) => !n.done).sort((a, b) => (!!b.isStarred - !!a.isStarred) || (b.createdAt - a.createdAt));
   const done = all.filter((n) => n.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-  return { upcoming, inbox, done };
+  return { inbox, done };
 }
 
 function render() {
   if ($("viewApp").hidden) return;
+  renderFilter();
+  if ($("tagDialog").open) renderTagDialog();
   const groups = visibleNotes();
   document.querySelectorAll(".tabs button").forEach((b) => {
     const t = b.dataset.tab;
@@ -300,7 +420,8 @@ function render() {
   const items = groups[state.tab];
   list.replaceChildren(...items.map(renderItem));
   $("empty").hidden = items.length > 0;
-  $("empty").textContent = { upcoming: "Nothing scheduled.", inbox: "Inbox zero.", done: "No completed notes yet." }[state.tab];
+  $("empty").textContent = state.filter.size ? "No tasks with these tags here."
+    : { inbox: "Inbox zero.", done: "No completed notes yet." }[state.tab];
 }
 
 function renderItem(n) {
@@ -315,6 +436,34 @@ function renderItem(n) {
     meta.textContent = (overdue ? "Overdue · " : "") + describe(n.remindAt);
     if (overdue) meta.classList.add("overdue");
   } else meta.textContent = `Added ${describe(n.createdAt)}`;
+
+  li.querySelector(".notetags").replaceChildren(...noteTags(n).map((t) => tagPill(t, { small: true })));
+  const star = li.querySelector(".act-star");
+  star.textContent = n.isStarred ? "★" : "☆";
+  star.classList.toggle("on", !!n.isStarred);
+  star.setAttribute("aria-label", n.isStarred ? "Unstar" : "Star");
+  star.onclick = () => upsert(n.uid, { isStarred: !n.isStarred });
+
+  // Tag picker for this note: toggle existing tags or type a new one. Stays open while you pick.
+  li.querySelector(".act-tags").onclick = () => { state.tagPopFor = state.tagPopFor === n.uid ? null : n.uid; render(); };
+  if (state.tagPopFor === n.uid) {
+    const pop = document.createElement("div");
+    pop.className = "tagpop";
+    const ids = noteTagIds(n);
+    pop.append(...activeTags().map((t) => tagPill(t, { selected: ids.includes(t.uid), onClick: () => toggleNoteTag(n.uid, t.uid) })));
+    const input = document.createElement("input");
+    input.type = "search"; input.placeholder = "New tag, then Enter"; input.dir = "auto";
+    input.onkeydown = (e) => {
+      if (e.key !== "Enter") return;
+      const id = findOrCreateTag(input.value);
+      if (id && !ids.includes(id)) toggleNoteTag(n.uid, id);
+    };
+    const close = document.createElement("button");
+    close.className = "ghost"; close.textContent = "Close";
+    close.onclick = () => { state.tagPopFor = null; render(); };
+    pop.append(input, close);
+    li.querySelector(".body").append(pop);
+  }
 
   renderAtts(li.querySelector(".atts"), activeAtts(n), (att) => removeAttachment(n.uid, att));
   const fileIn = document.createElement("input");
@@ -371,18 +520,24 @@ function renderItem(n) {
 }
 
 function saveNote() {
-  const text = $("noteText").value.trim();
+  // #word in the text becomes a tag and leaves the text (same as the phone).
+  const raw = $("noteText").value.trim();
+  const names = [...raw.matchAll(HASHTAG)].map((m) => m[1]);
+  const stripped = raw.replace(HASHTAG, "").split("\n").map((l) => l.replace(/ {2,}/g, " ").trimEnd()).join("\n").trim();
+  const useTags = names.length > 0 && (stripped.length > 0 || state.pendingAtts.length > 0); // only #tags: keep as text
+  const text = useTags ? stripped : raw;
+  const tags = useTags ? [...new Set(names.map(findOrCreateTag).filter(Boolean))] : [];
   if (state.pendingAtts.some((p) => p.busy)) { setStatus("Still uploading attachments…"); return; }
   const atts = state.pendingAtts.map((p) => p.meta);
   if (!text && !atts.length) return;
   const now = Date.now();
   const uid = crypto.randomUUID();
-  state.notes.set(uid, { uid, text, createdAt: now, remindAt: state.pendingAt, done: false, doneAt: null, updatedAt: now, deleted: false, attachments: atts });
+  state.notes.set(uid, { uid, text, createdAt: now, remindAt: state.pendingAt, done: false, doneAt: null, updatedAt: now, deleted: false, attachments: atts, tags });
   state.pendingAtts = [];
   renderPending();
   $("noteText").value = "";
   state.pendingAt = null; state.pendingLabel = null; $("pickWrap").hidden = true;
-  state.tab = state.notes.get(uid).remindAt != null ? "upcoming" : "inbox";
+  state.tab = "inbox";
   renderCapture();
   changed();
   $("noteText").focus();
@@ -622,6 +777,12 @@ async function main() {
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; render(); }));
   $("search").addEventListener("input", render);
   $("lockBtn").onclick = () => location.reload(); // key lives in memory only
+  $("tagDialogClose").onclick = () => $("tagDialog").close();
+  $("tagAddForm").onsubmit = (e) => {
+    e.preventDefault();
+    if (findOrCreateTag($("tagAddInput").value)) changed();
+    $("tagAddInput").value = "";
+  };
   $("syncBtn").onclick = syncNow;
   $("status").onclick = syncNow; // the status text works as a second Sync button
 

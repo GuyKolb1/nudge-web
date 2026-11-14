@@ -66,10 +66,10 @@
   </section>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="upcoming" aria-selected="true">Upcoming <span></span></button>
-    <button role="tab" data-tab="inbox" aria-selected="false">Inbox <span></span></button>
+    <button role="tab" data-tab="inbox" aria-selected="true">Inbox <span></span></button>
     <button role="tab" data-tab="done" aria-selected="false">Done</button>
   </nav>
+  <div id="tagFilter" class="tagrow"></div>
   <input id="search" class="search" type="search" placeholder="Search notes" dir="auto">
   <ul id="list" class="list"></ul>
   <p id="empty" class="muted center" hidden></p>
@@ -77,16 +77,31 @@
 
 <footer class="muted small center" style="padding:24px"><a href="download.html" style="color:inherit">Get the Android app</a> · <a href="privacy.html" style="color:inherit">Privacy policy</a> ·End-to-end encrypted</footer>
 
+<!-- Manage tags: order, rename, color, delete -->
+<dialog id="tagDialog" class="card">
+  <h1>Tags</h1>
+  <p class="muted small">Use the arrows to set the order. Click the dot to change the color. Edit a name and press Enter to rename.</p>
+  <ul id="tagList" class="taglist"></ul>
+  <form id="tagAddForm" class="row">
+    <input id="tagAddInput" type="search" placeholder="New tag" dir="auto">
+    <button class="ghost" type="submit">Add</button>
+  </form>
+  <div class="row" style="justify-content:flex-end;margin-top:12px"><button id="tagDialogClose" class="primary">Done</button></div>
+</dialog>
+
 <template id="itemTpl">
   <li class="item">
     <button class="check" aria-label="Mark done"></button>
     <div class="body">
       <div class="text" dir="auto"></div>
       <div class="atts"></div>
+      <div class="tagrow notetags"></div>
       <div class="meta"></div>
     </div>
     <div class="actions">
+      <button class="ghost act-star" title="Star: keeps the note at the top of the Inbox">☆</button>
       <button class="ghost act-attach" title="Attach files (or drop them on the note)">📎</button>
+      <button class="ghost act-tags">Tags</button>
       <button class="ghost act-remind">Remind</button>
       <button class="ghost act-edit">Edit</button>
       <button class="ghost act-delete" aria-label="Delete">Delete</button>
