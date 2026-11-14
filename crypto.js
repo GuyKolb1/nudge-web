@@ -1,4 +1,4 @@
-// Nudge vault crypto for the browser (and Node 20+). Same format as app/.../sync/VaultCrypto.kt
+// GetSheetDone vault crypto for the browser (and Node 20+). Same format as app/.../sync/VaultCrypto.kt
 // Key: PBKDF2-HMAC-SHA256(UTF-8 passphrase, salt, 600k) -> AES-256-GCM, 12-byte IV.
 // Envelope: {"v":1,"iv":"<b64>","ct":"<b64 ciphertext+tag>"}
 

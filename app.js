@@ -1,9 +1,9 @@
-// Nudge web: end-to-end encrypted notes synced through the hidden Nudge folder in Google Drive.
+// GetSheetDone web: end-to-end encrypted notes synced through the hidden GetSheetDone folder in Google Drive.
 // Same vault + file format as the Android app (see app/.../sync in the nudge repo).
 import * as C from "./crypto.js";
 
 const CLIENT_ID = "268823083504-eeb2eh2mndmllongm0hsc13hshc2l30n.apps.googleusercontent.com";
-// One permission only: Nudge's own hidden folder in the user's Drive. Works for any Google account.
+// One permission only: GetSheetDone's own hidden folder in the user's Drive. Works for any Google account.
 const SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const DEVICE = "web";
 const API = "https://www.googleapis.com";
@@ -718,8 +718,8 @@ async function afterSignIn() {
   const create = !state.vault;
   $("unlockTitle").textContent = create ? "Create your passphrase" : "Enter your passphrase";
   $("unlockHint").textContent = create
-    ? "No Nudge vault found yet. Create a passphrase (at least 8 characters). You'll use the same one on your phone. If you forget it, synced notes can't be recovered."
-    : "The passphrase you created in Nudge.";
+    ? "No GetSheetDone vault found yet. Create a passphrase (at least 8 characters). You'll use the same one on your phone. If you forget it, synced notes can't be recovered."
+    : "The passphrase you created in GetSheetDone.";
   $("confirmWrap").hidden = !create;
   $("pass2").required = create;
   $("unlockBtn").textContent = create ? "Create vault" : "Unlock";

@@ -1,6 +1,6 @@
 {
-  "name": "Nudge",
-  "short_name": "Nudge",
+  "name": "GetSheetDone",
+  "short_name": "GetSheetDone",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#F3F1EA",
