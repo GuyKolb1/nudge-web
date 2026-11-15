@@ -22,7 +22,7 @@ h1 { font-size: 22px; margin: 0 0 8px; }
 .center { text-align: center; }
 .error { color: var(--accent); font-size: 14px; min-height: 1em; }
 label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-input[type=password], input[type=search], input[type=datetime-local] {
+input[type=password], input.secret, input[type=search], input[type=datetime-local] {
   width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink);
 }
 .primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 10px 20px; font-weight: 600; min-height: 44px; }
@@ -94,6 +94,8 @@ button.tag { cursor: pointer; min-height: 32px; }
 .taglist input { flex: 1; min-width: 0; font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
 .taglist .ghost { min-height: 32px; padding: 4px 8px; }
 .taglist .ghost:disabled { opacity: .3; cursor: default; }
+/* The passphrase is a text field drawn as dots, so the browser does not offer to save it. */
+input.secret { -webkit-text-security: disc; text-security: disc; }
 .act-star.on { color: #E0A100; }
 .act-rocket, .act-rocket:hover { color: var(--accent); }
 .act-rocket { display: inline-flex; align-items: center; gap: 3px; }

@@ -1,3 +1,6 @@
+// Never run inside another site's frame (clickjacking). GitHub Pages cannot send a frame header, so the page checks itself.
+if (window.top !== window.self) { document.documentElement.remove(); throw new Error("GetSheetDone does not run inside a frame."); }
+
 // GetSheetDone web: end-to-end encrypted notes synced through the hidden GetSheetDone folder in Google Drive.
 // Same vault + file format as the Android app (see app/.../sync in the nudge repo).
 import * as C from "./crypto.js";
@@ -433,8 +436,8 @@ function render() {
     : { inbox: "Inbox zero.", done: "No completed notes yet." }[state.tab];
 }
 
-// The GetSheetDone rocket: opens Claude in a new tab with the task and the agent's mission (same text as the phone).
-// Nothing reaches Claude from this page except through that tab, and only because the user clicked the rocket.
+// The GetSheetDone rocket: copies the task and the agent's mission (same text as the phone) and opens Claude in a new tab,
+// where the user pastes it. The text is never put in the address, so it does not land in the browser history.
 // The agent only prepares: it never sends, invites or shares.
 function agentPrompt(note) {
   return `This is a task from my task app, GetSheetDone:\n\n"${note}"\n\n` +
@@ -455,12 +458,12 @@ function agentPrompt(note) {
 
 function launchAgent(note) {
   const prompt = agentPrompt(note);
-  // Also on the clipboard, so a long task (or a chat that opens empty) is one paste away.
-  navigator.clipboard?.writeText(prompt).catch(() => {});
-  const url = "https://claude.ai/new?q=" + encodeURIComponent(prompt);
-  const fits = url.length <= 6000;
-  window.open(fits ? url : "https://claude.ai/new", "_blank", "noopener");
-  setStatus(fits ? "Opened in Claude. If the chat is empty, paste." : "Task copied. Paste it into Claude.");
+  if (!navigator.clipboard) { setStatus("This browser cannot copy the task.", true); return; }
+  navigator.clipboard.writeText(prompt).then(
+    () => setStatus("Task copied. Paste it into Claude (Ctrl+V)."),
+    () => setStatus("Could not copy the task.", true),
+  );
+  window.open("https://claude.ai/new", "_blank", "noopener");
 }
 
 function renderItem(n) {
@@ -676,6 +679,8 @@ async function attachmentUrl(att) {
   if (!id) { await listFiles(); id = state.blobIds.get(att.attUid); }
   if (!id) return null;
   const bytes = await C.decryptBytes(state.key, await downloadBytes(id));
+  // The file must be the one this note recorded: stops someone with Drive access swapping one encrypted file for another.
+  if (att.sha256 && (await C.sha256Hex(bytes)) !== att.sha256) throw new Error("This file does not match the note it belongs to.");
   const url = URL.createObjectURL(new Blob([bytes], { type: att.mime }));
   urlCache.set(att.attUid, url);
   return url;
@@ -825,6 +830,10 @@ async function main() {
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; render(); }));
   $("search").addEventListener("input", render);
   $("lockBtn").onclick = () => location.reload(); // key lives in memory only
+  // Auto-lock: after 15 minutes without a click or a key press the page reloads, which drops the key and the notes from memory.
+  let lastInput = Date.now();
+  for (const ev of ["pointerdown", "keydown", "wheel"]) window.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true });
+  setInterval(() => { if (state.key && Date.now() - lastInput > 15 * 60000) location.reload(); }, 20000);
   $("tagDialogClose").onclick = () => $("tagDialog").close();
   $("tagAddForm").onsubmit = (e) => {
     e.preventDefault();
