@@ -99,7 +99,7 @@ input.secret { -webkit-text-security: disc; text-security: disc; }
 .act-star.on { color: #E0A100; }
 .updatebox { margin-top: 6px; width: 100%; }
 .act-rocket, .act-rocket:hover { color: var(--accent); }
-.act-rocket { display: inline-flex; align-items: center; gap: 3px; }
+.act-rocket { display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
 .rocket-n { font-size: 12px; font-weight: 600; }
 .rocket-n:empty { display: none; }
 .item.prepared { background: #E2F3E4; }

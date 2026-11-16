@@ -448,6 +448,7 @@ function render() {
 
 // The GetSheetDone rocket: copies the task and the agent's mission (same text as the phone) and opens Claude in a new tab,
 // where the user pastes it. The text is never put in the address, so it does not land in the browser history.
+// The rocket is a real link, so Chrome's right-click "Open link as <profile>" can open Claude in the work profile.
 // The agent only prepares: it never sends, invites or shares.
 function agentPrompt(note) {
   return `This is a task from my task app, GetSheetDone:\n\n"${note}"\n\n` +
@@ -473,7 +474,6 @@ function launchAgent(note) {
     () => setStatus("Task copied. Paste it into Claude (Ctrl+V)."),
     () => setStatus("Could not copy the task.", true),
   );
-  window.open("https://claude.ai/new", "_blank", "noopener");
 }
 
 function renderItem(n) {
@@ -500,7 +500,11 @@ function renderItem(n) {
   else {
     // The number next to the rocket: how many times it was pressed for this task.
     rocket.querySelector(".rocket-n").textContent = n.rocketCount > 0 ? String(n.rocketCount) : "";
-    rocket.onclick = () => { launchAgent(n.text); upsert(n.uid, { rocketCount: (n.rocketCount || 0) + 1 }); };
+    // Click opens Claude in this profile (the link itself). Right-click copies too, for "Open link as".
+    // The count is saved a moment later, so the list redraw never gets in the way of the link.
+    const press = () => { launchAgent(n.text); setTimeout(() => upsert(n.uid, { rocketCount: (n.rocketCount || 0) + 1 }), 300); };
+    rocket.onclick = press;
+    rocket.oncontextmenu = press;
   }
   // Green = Claude prepared this task, only your own step is left.
   if (n.prepared && !n.done) { li.classList.add("prepared"); meta.textContent = "Ready for you · " + meta.textContent; }
