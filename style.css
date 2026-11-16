@@ -97,6 +97,7 @@ button.tag { cursor: pointer; min-height: 32px; }
 /* The passphrase is a text field drawn as dots, so the browser does not offer to save it. */
 input.secret { -webkit-text-security: disc; text-security: disc; }
 .act-star.on { color: #E0A100; }
+.updatebox { margin-top: 6px; width: 100%; }
 .act-rocket, .act-rocket:hover { color: var(--accent); }
 .act-rocket { display: inline-flex; align-items: center; gap: 3px; }
 .rocket-n { font-size: 12px; font-weight: 600; }

@@ -22,6 +22,8 @@ const state = {
   tab: "inbox",
   tags: new Map(),         // uid -> { uid, name, color, order, updatedAt, deleted }
   filter: new Set(),       // tag uids picked in the filter row (any of them)
+  updateFor: null,         // uid of the note whose "add update" box is open
+  updateDraft: "",         // what is typed in it (kept while the list redraws)
   tagPopFor: null,         // uid of the note whose tag picker is open
   pendingAt: null, pendingLabel: null,
   vault: null,             // { id, json } or null if none yet
@@ -220,6 +222,14 @@ function upsert(uid, patch) {
   const n = state.notes.get(uid);
   state.notes.set(uid, { ...n, ...patch, updatedAt: Date.now() });
   changed();
+}
+
+// An update is one dated line at the end of the task text ("Update 15 Nov: ..."), same as on the phone.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function withUpdate(text, update) {
+  const d = new Date();
+  const line = `Update ${d.getDate()} ${MONTHS[d.getMonth()]}: ${update.trim().replace(/\s*\n\s*/g, " ")}`;
+  return ((text || "").trimEnd() + "\n" + line).trim();
 }
 
 // ---------- Tags (same model as the phone: last-writer-wins per tag, deletes are tombstones) ----------
@@ -494,6 +504,26 @@ function renderItem(n) {
   }
   // Green = Claude prepared this task, only your own step is left.
   if (n.prepared && !n.done) { li.classList.add("prepared"); meta.textContent = "Ready for you · " + meta.textContent; }
+
+  // Quick update: a one-line box under the note. Enter adds it as the task's last line, Esc closes.
+  const updateBtn = li.querySelector(".act-update");
+  if (n.done) updateBtn.remove();
+  else updateBtn.onclick = () => { state.updateFor = state.updateFor === n.uid ? null : n.uid; state.updateDraft = ""; render(); };
+  if (state.updateFor === n.uid && !n.done) {
+    const box = document.createElement("input");
+    box.type = "search"; box.className = "updatebox"; box.placeholder = "What changed? Enter adds it"; box.dir = "auto";
+    box.value = state.updateDraft;
+    box.oninput = () => { state.updateDraft = box.value; };
+    box.onkeydown = (e) => {
+      if (e.key === "Escape") { state.updateFor = null; state.updateDraft = ""; render(); return; }
+      if (e.key !== "Enter") return;
+      const t = box.value.trim();
+      state.updateFor = null; state.updateDraft = "";
+      if (t) upsert(n.uid, { text: withUpdate(n.text, t) }); else render();
+    };
+    li.querySelector(".body").append(box);
+    setTimeout(() => { if (box.isConnected) box.focus(); }, 0);
+  }
 
   // Tag picker for this note: toggle existing tags or type a new one. Stays open while you pick.
   li.querySelector(".act-tags").onclick = () => { state.tagPopFor = state.tagPopFor === n.uid ? null : n.uid; render(); };
