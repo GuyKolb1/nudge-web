@@ -103,3 +103,6 @@ input.secret { -webkit-text-security: disc; text-security: disc; }
 .rocket-n { font-size: 12px; font-weight: 600; }
 .rocket-n:empty { display: none; }
 .item.prepared { background: #E2F3E4; }
+.tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tagrow:empty { display: none; }
+.text i { font-style: italic; }

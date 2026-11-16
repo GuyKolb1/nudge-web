@@ -26,6 +26,7 @@ const state = {
   updateDraft: "",         // what is typed in it (kept while the list redraws)
   tagPopFor: null,         // uid of the note whose tag picker is open
   pendingAt: null, pendingLabel: null,
+  pendingTags: new Set(),  // tags picked in the capture box before Save
   vault: null,             // { id, json } or null if none yet
   pendingAtts: [],         // attachments added in the capture box before Save: { meta, busy }
   blobIds: new Map(),      // attUid -> Drive file id
@@ -232,6 +233,22 @@ function withUpdate(text, update) {
   return ((text || "").trimEnd() + "\n" + line).trim();
 }
 
+const UPDATE_LINE = /^(\s*Update(?: \d{1,2} [A-Za-z]{3,4})?:)( .*)?$/;
+/** Shows the text; the "Update 15 Nov:" start of an update line is in italics. */
+function setNoteText(el, value) {
+  const parts = [];
+  value.split("
+").forEach((line, i) => {
+    if (i) parts.push("
+");
+    const m = UPDATE_LINE.exec(line);
+    if (!m) { parts.push(line); return; }
+    const em = document.createElement("i"); em.textContent = m[1];
+    parts.push(em, m[2] || "");
+  });
+  el.replaceChildren(...parts);
+}
+
 // ---------- Tags (same model as the phone: last-writer-wins per tag, deletes are tombstones) ----------
 const PALETTE = ["#0E6B5C", "#C2410C", "#1D4ED8", "#7C3AED", "#B45309", "#BE185D", "#15803D", "#475569"];
 const HASHTAG = /(?:^|(?<=\s))#(\p{L}[\p{L}\p{N}_-]*)/gmu;
@@ -411,6 +428,11 @@ function renderCapture() {
     else { state.pendingLabel = label; state.pendingAt = at; $("pickWrap").hidden = true; }
     renderCapture();
   }, state.pendingLabel));
+  const tags = activeTags();
+  for (const uid of state.pendingTags) if (!tags.some((t) => t.uid === uid)) state.pendingTags.delete(uid);
+  $("captureTags").replaceChildren(...tags.map((t) => tagPill(t, { selected: state.pendingTags.has(t.uid), onClick: () => {
+    state.pendingTags.has(t.uid) ? state.pendingTags.delete(t.uid) : state.pendingTags.add(t.uid); renderCapture();
+  } })));
   $("whenLine").hidden = !state.pendingAt;
   if (state.pendingAt) $("whenLine").textContent = `Reminds you ${describe(state.pendingAt)}`;
   $("saveBtn").disabled = !$("noteText").value.trim() && !state.pendingAtts.length;
@@ -440,6 +462,8 @@ function render() {
   });
   const list = $("list");
   const items = groups[state.tab];
+  // Sync and the 30 s timer redraw the list. Never while a note is being typed in: that threw away the text and the focus.
+  if (list.querySelector('.text[contenteditable="true"]')) return;
   list.replaceChildren(...items.map(renderItem));
   $("empty").hidden = items.length > 0;
   $("empty").textContent = state.filter.size ? "No tasks with these tags here."
@@ -480,7 +504,7 @@ function renderItem(n) {
   const li = $("itemTpl").content.firstElementChild.cloneNode(true);
   if (n.done) li.classList.add("done");
   const text = li.querySelector(".text");
-  text.textContent = n.text || activeAtts(n).map((a) => a.name).join(", ");
+  setNoteText(text, n.text || activeAtts(n).map((a) => a.name).join(", "));
   const meta = li.querySelector(".meta");
   if (n.done) meta.textContent = n.doneAt ? `Done ${describe(n.doneAt)}` : "Done";
   else if (n.remindAt != null) {
@@ -573,9 +597,11 @@ function renderItem(n) {
     if (editing) {
       const value = text.innerText.trim();
       text.contentEditable = "false"; e.target.textContent = "Edit";
-      if (value && value !== n.text) upsert(n.uid, { text: value });
+      if (value && value !== n.text) upsert(n.uid, { text: value }); else render();
     } else {
-      text.contentEditable = "true"; e.target.textContent = "Done editing"; text.focus();
+      text.contentEditable = "true"; e.target.textContent = "Done editing";
+      text.textContent = n.text || ""; // plain while typing
+      text.focus();
     }
   };
 
@@ -611,7 +637,7 @@ function saveNote() {
   const stripped = raw.replace(HASHTAG, "").split("\n").map((l) => l.replace(/ {2,}/g, " ").trimEnd()).join("\n").trim();
   const useTags = names.length > 0 && (stripped.length > 0 || state.pendingAtts.length > 0); // only #tags: keep as text
   const text = useTags ? stripped : raw;
-  const tags = useTags ? [...new Set(names.map(findOrCreateTag).filter(Boolean))] : [];
+  const tags = [...new Set([...state.pendingTags, ...(useTags ? names.map(findOrCreateTag).filter(Boolean) : [])])];
   if (state.pendingAtts.some((p) => p.busy)) { setStatus("Still uploading attachments…"); return; }
   const atts = state.pendingAtts.map((p) => p.meta);
   if (!text && !atts.length) return;
@@ -622,6 +648,7 @@ function saveNote() {
   renderPending();
   $("noteText").value = "";
   state.pendingAt = null; state.pendingLabel = null; $("pickWrap").hidden = true;
+  state.pendingTags.clear();
   state.tab = "inbox";
   renderCapture();
   changed();
