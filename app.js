@@ -237,10 +237,8 @@ const UPDATE_LINE = /^(\s*Update(?: \d{1,2} [A-Za-z]{3,4})?:)( .*)?$/;
 /** Shows the text; the "Update 15 Nov:" start of an update line is in italics. */
 function setNoteText(el, value) {
   const parts = [];
-  value.split("
-").forEach((line, i) => {
-    if (i) parts.push("
-");
+  value.split("\n").forEach((line, i) => {
+    if (i) parts.push("\n");
     const m = UPDATE_LINE.exec(line);
     if (!m) { parts.push(line); return; }
     const em = document.createElement("i"); em.textContent = m[1];
