@@ -501,7 +501,13 @@ function render() {
   const items = groups[state.tab];
   // Sync and the 30 s timer redraw the list. Never while a note is being typed in: that threw away the text and the focus.
   if (list.querySelector('.text[contenteditable="true"]')) return;
+  // Emptying the list shrinks the page and the browser jumps to the top: keep the place the user was at.
+  const y = window.scrollY;
+  const keep = list.offsetHeight;
+  list.style.minHeight = keep + "px";
   list.replaceChildren(...items.map(renderItem));
+  window.scrollTo(0, y);
+  list.style.minHeight = "";
   $("empty").hidden = items.length > 0;
   $("empty").textContent = state.filter.size ? "No tasks with these tags here."
     : { inbox: "Inbox zero.", done: "No completed notes yet." }[state.tab];
