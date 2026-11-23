@@ -15,7 +15,9 @@ const DAY = 86400000;
 const $ = (id) => document.getElementById(id);
 const state = {
   token: null, tokenExp: 0, tokenClient: null,
-  key: null,               // AES CryptoKey, memory only (asked again in each browser session)
+  key: null,               // AES CryptoKey (non-extractable). Asked again each browser session, unless "stay unlocked 24 hours" is on
+  remembered: null,        // { key, exp } found in IndexedDB at page load
+  remembering: false,      // true while the key is also stored for 24 hours
   notes: new Map(),        // uid -> note
   ownFileId: null,
   dirty: false,
@@ -46,18 +48,55 @@ function initGoogle() {
   });
 }
 
-function getToken() {
+/** silent = try without any Google screen (used when the page opens); it fails fast if Google needs a click. */
+function getToken(silent = false) {
   if (state.token && Date.now() < state.tokenExp - 60000) return Promise.resolve(state.token);
   return new Promise((resolve, reject) => {
+    const timer = silent ? setTimeout(() => reject(new Error("Silent sign-in timed out")), 8000) : null;
     state.tokenClient.callback = (r) => {
+      clearTimeout(timer);
       if (r.error) return reject(new Error(r.error_description || r.error));
       state.token = r.access_token;
       state.tokenExp = Date.now() + r.expires_in * 1000;
       resolve(state.token);
     };
-    state.tokenClient.error_callback = (e) => reject(new Error(e.message || e.type || "Sign-in cancelled"));
-    state.tokenClient.requestAccessToken({ prompt: "" });
+    state.tokenClient.error_callback = (e) => { clearTimeout(timer); reject(new Error(e.message || e.type || "Sign-in cancelled")); };
+    state.tokenClient.requestAccessToken({ prompt: silent ? "none" : "" });
   });
+}
+
+// ---------- Stay unlocked for 24 hours (optional) ----------
+// Only the derived AES key is kept, as a non-extractable CryptoKey in this browser's IndexedDB. The passphrase is never stored,
+// and the key can be used by this page but cannot be read out or copied. It expires after 24 hours, and "Lock" removes it.
+const REMEMBER_MS = DAY;
+function openKv() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open("gsd-unlock", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("kv");
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+async function kv(mode, fn) {
+  const db = await openKv();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction("kv", mode);
+      const req = fn(tx.objectStore("kv"));
+      tx.oncomplete = () => resolve(req?.result);
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+async function forgetUnlock() { try { await kv("readwrite", (s) => s.delete("unlock")); } catch { /* nothing stored */ } }
+async function rememberUnlock(key) { try { await kv("readwrite", (s) => s.put({ key, exp: Date.now() + REMEMBER_MS }, "unlock")); state.remembering = true; } catch { /* private mode: just ask again next time */ } }
+async function loadRemembered() {
+  try {
+    const v = await kv("readonly", (s) => s.get("unlock"));
+    if (v && v.key && v.exp > Date.now()) return v;
+    if (v) await forgetUnlock();
+  } catch { /* none */ }
+  return null;
 }
 
 // ---------- Drive (appDataFolder only) ----------
@@ -823,10 +862,24 @@ function makeDropZone(el, onFiles) {
 }
 
 // ---------- Wiring ----------
+async function enterApp() {
+  show("viewApp"); renderCapture(); render();
+  $("noteText").focus();
+  await sync();
+}
+
 async function afterSignIn() {
   setStatus("Checking your Drive…");
   await loadVaultInfo();
   setStatus("");
+  // Unlocked within the last 24 hours on this browser: check the stored key against the vault and skip the passphrase.
+  if (state.vault && state.remembered) {
+    let ok = false;
+    try { ok = (await C.decrypt(state.remembered.key, state.vault.json.check)) === C.CHECK_TEXT; } catch { ok = false; }
+    if (ok) { state.key = state.remembered.key; state.remembering = true; await enterApp(); return; }
+    await forgetUnlock(); // passphrase was changed on another device
+  }
+  state.remembered = null;
   const create = !state.vault;
   $("unlockTitle").textContent = create ? "Create your passphrase" : "Enter your passphrase";
   $("unlockHint").textContent = create
@@ -849,6 +902,13 @@ async function main() {
     catch (e) { $("signinError").textContent = e.message; }
   };
 
+  // Unlocked in the last 24 hours: try to get back in with no screens at all. If Google needs a click, the sign-in button is still there.
+  state.remembered = await loadRemembered();
+  if (state.remembered) {
+    $("signinBtn").textContent = "Continue with Google";
+    try { await getToken(true); await afterSignIn(); } catch { /* the button is shown */ }
+  }
+
   $("unlockForm").onsubmit = async (e) => {
     e.preventDefault();
     $("unlockError").textContent = "";
@@ -858,9 +918,8 @@ async function main() {
     try {
       await unlock(pass);
       $("pass").value = ""; $("pass2").value = "";
-      show("viewApp"); renderCapture(); render();
-      $("noteText").focus();
-      await sync();
+      if ($("remember").checked) await rememberUnlock(state.key); else await forgetUnlock();
+      await enterApp();
     } catch (err) {
       $("unlockError").textContent = err.message;
     } finally {
@@ -888,11 +947,12 @@ async function main() {
   };
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => { state.tab = b.dataset.tab; render(); }));
   $("search").addEventListener("input", render);
-  $("lockBtn").onclick = () => location.reload(); // key lives in memory only
+  $("lockBtn").onclick = async () => { await forgetUnlock(); location.reload(); }; // Lock also removes the 24 hour key
   // Auto-lock: after 15 minutes without a click or a key press the page reloads, which drops the key and the notes from memory.
+  // Not while "stay unlocked 24 hours" is on: a reload would just open straight back in, so it would only look like a lock.
   let lastInput = Date.now();
   for (const ev of ["pointerdown", "keydown", "wheel"]) window.addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true, capture: true });
-  setInterval(() => { if (state.key && Date.now() - lastInput > 15 * 60000) location.reload(); }, 20000);
+  setInterval(() => { if (state.key && !state.remembering && Date.now() - lastInput > 15 * 60000) location.reload(); }, 20000);
   $("tagDialogClose").onclick = () => $("tagDialog").close();
   $("tagAddForm").onsubmit = (e) => {
     e.preventDefault();

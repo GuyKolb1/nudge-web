@@ -41,6 +41,10 @@
       <label for="pass2">Repeat passphrase</label>
       <input id="pass2" class="secret" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore minlength="8">
     </div>
+    <label for="remember" style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0;font-weight:normal">
+      <input id="remember" type="checkbox" checked style="width:auto;margin:0">
+      Stay unlocked on this browser for 24 hours
+    </label>
     <button class="primary" id="unlockBtn" type="submit">Unlock</button>
   </form>
   <p id="unlockError" class="error"></p>
