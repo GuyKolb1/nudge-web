@@ -570,7 +570,13 @@ function renderItem(n) {
     // Click opens Claude in this profile (the link itself). Right-click copies too, for "Open link as".
     // The count is saved a moment later, so the list redraw never gets in the way of the link.
     const press = () => { launchAgent(n.text); setTimeout(() => upsert(n.uid, { rocketCount: (n.rocketCount || 0) + 1 }), 300); };
-    rocket.onclick = press;
+    // A plain click opens the Claude desktop app (claude:// link). Shift-click, Ctrl-click or middle-click keep the claude.ai web link.
+    rocket.onclick = (e) => {
+      press();
+      if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      window.location.href = "claude://claude.ai/new";
+    };
     rocket.oncontextmenu = press;
   }
   // Green = Claude prepared this task, only your own step is left.
