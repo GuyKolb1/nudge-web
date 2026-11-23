@@ -543,6 +543,89 @@ function launchAgent(note) {
   );
 }
 
+// ---------- Focus timer (Pomodoro) ----------
+// uid -> end time (ms). Kept in this browser only; a timer that ended while the page was closed is dropped.
+const TIMER_KEY = "gsd-timers";
+const timers = new Map();
+try {
+  for (const [uid, end] of Object.entries(JSON.parse(localStorage.getItem(TIMER_KEY) || "{}"))) if (end > Date.now()) timers.set(uid, end);
+} catch { /* none */ }
+const saveTimers = () => { try { localStorage.setItem(TIMER_KEY, JSON.stringify(Object.fromEntries(timers))); } catch { /* private mode */ } };
+const fmtLeft = (ms) => {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+function updateTomato(li) {
+  const end = timers.get(li.dataset.uid);
+  const b = li.querySelector(".act-tomato");
+  if (!b) return;
+  b.querySelector(".tomato-t").textContent = end ? fmtLeft(end - Date.now()) : "";
+  b.classList.toggle("running", !!end);
+}
+let timerFor = null; // the note whose dialog is open
+function openTimerDialog(n) {
+  timerFor = n;
+  $("timerTask").textContent = (n.text || "").split("\n")[0].slice(0, 80);
+  refreshTimerDialog();
+  $("timerDialog").showModal();
+}
+function refreshTimerDialog() {
+  const end = timerFor && timers.get(timerFor.uid);
+  $("timerRunning").hidden = !end;
+  $("timerPick").hidden = !!end;
+  if (end) $("timerLeft").textContent = fmtLeft(end - Date.now());
+}
+function startTimer(minutes) {
+  if (!timerFor || !(minutes > 0)) return;
+  timers.set(timerFor.uid, Date.now() + Math.round(minutes * 60000));
+  saveTimers();
+  // Asked here, on the click, so the browser lets us show the notification at the end.
+  try { if (window.Notification && Notification.permission === "default") Notification.requestPermission(); } catch { /* ignore */ }
+  $("timerDialog").close();
+  document.querySelectorAll(".item").forEach(updateTomato);
+}
+function stopTimer() {
+  if (timerFor) { timers.delete(timerFor.uid); saveTimers(); }
+  $("timerDialog").close();
+  document.querySelectorAll(".item").forEach(updateTomato);
+}
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35, 0.7].forEach((t) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.2, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.3);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+    });
+  } catch { /* no sound */ }
+}
+function timerTick() {
+  const now = Date.now();
+  for (const [uid, end] of [...timers]) {
+    if (end > now) continue;
+    timers.delete(uid); saveTimers();
+    const n = state.notes.get(uid);
+    const title = "Focus time is up";
+    const body = ((n?.text || "").split("\n")[0] || "").slice(0, 80);
+    beep();
+    setStatus(`${title}: ${body}`);
+    try { if (window.Notification && Notification.permission === "granted") new Notification(title, { body }); } catch { /* ignore */ }
+  }
+  document.querySelectorAll(".item").forEach(updateTomato);
+  if ($("timerDialog").open) refreshTimerDialog();
+}
+setInterval(timerTick, 1000);
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.("#timerDialog .timer-close")) $("timerDialog").close();
+  const m = e.target.closest?.("#timerPick [data-min]");
+  if (m) startTimer(Number(m.dataset.min));
+});
+document.addEventListener("submit", (e) => {
+  if (e.target.id === "timerOther") { e.preventDefault(); startTimer(Number($("timerOtherMin").value)); $("timerOtherMin").value = ""; }
+});
+document.addEventListener("click", (e) => { if (e.target.id === "timerStop") stopTimer(); });
+
 function renderItem(n) {
   const li = $("itemTpl").content.firstElementChild.cloneNode(true);
   if (n.done) li.classList.add("done");
@@ -579,6 +662,11 @@ function renderItem(n) {
     };
     rocket.oncontextmenu = press;
   }
+  // Focus timer (Pomodoro): per task, kept only in this browser (nothing is synced).
+  li.dataset.uid = n.uid;
+  const tomato = li.querySelector(".act-tomato");
+  if (n.done) tomato.remove();
+  else { tomato.onclick = () => openTimerDialog(n); updateTomato(li); }
   // Green = Claude prepared this task, only your own step is left.
   if (n.prepared && !n.done) { li.classList.add("prepared"); meta.textContent = "Ready for you · " + meta.textContent; }
 

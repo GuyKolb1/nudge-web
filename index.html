@@ -94,6 +94,30 @@
   <div class="row" style="justify-content:flex-end;margin-top:12px"><button id="tagDialogClose" class="primary">Done</button></div>
 </dialog>
 
+<!-- Focus timer (Pomodoro) -->
+<dialog id="timerDialog" class="card">
+  <h1>Focus timer</h1>
+  <p id="timerTask" class="muted small"></p>
+  <div id="timerRunning" hidden>
+    <p><strong id="timerLeft"></strong> left</p>
+    <div class="row" style="justify-content:flex-end"><button id="timerStop" class="ghost">Stop timer</button><button class="ghost timer-close">Close</button></div>
+  </div>
+  <div id="timerPick">
+    <p class="muted small">Countdown (minutes)</p>
+    <div class="timer-opts">
+      <button class="ghost" data-min="15">15</button>
+      <button class="ghost" data-min="30">30</button>
+      <button class="ghost" data-min="45">45</button>
+      <button class="ghost" data-min="60">60</button>
+    </div>
+    <form id="timerOther" class="row" style="margin-top:8px">
+      <input id="timerOtherMin" type="number" min="1" max="600" step="1" placeholder="Other (minutes)" required>
+      <button class="ghost" type="submit">Start</button>
+    </form>
+    <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="ghost timer-close">Cancel</button></div>
+  </div>
+</dialog>
+
 <template id="itemTpl">
   <li class="item">
     <button class="check" aria-label="Mark done"></button>
@@ -112,6 +136,7 @@
           <circle cx="12" cy="9.1" r="1.8" fill="#fff"/>
         </g></svg><span class="rocket-n"></span>
       </a>
+      <button class="ghost act-tomato" title="Focus timer (Pomodoro) for this task" aria-label="Focus timer">🍅<span class="tomato-t"></span></button>
       <button class="ghost act-star" title="Star: keeps the note at the top of the Inbox">☆</button>
       <button class="ghost act-attach" title="Attach files (or drop them on the note)">📎</button>
       <button class="ghost act-tags">Tags</button>

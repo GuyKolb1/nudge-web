@@ -106,3 +106,10 @@ input.secret { -webkit-text-security: disc; text-security: disc; }
 .tagrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .tagrow:empty { display: none; }
 .text i { font-style: italic; }
+
+/* Focus timer (Pomodoro) */
+.act-tomato { display: inline-flex; align-items: center; gap: 3px; }
+.tomato-t { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tomato-t:empty { display: none; }
+.act-tomato.running { color: var(--accent); }
+.timer-opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
